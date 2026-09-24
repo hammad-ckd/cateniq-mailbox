@@ -10,7 +10,7 @@
     "nodejs_compat"
   ],
   "vars": {
-    "DOMAINS": "cateniq.com",
+    "DOMAINS": "cateniq.com,catenor.com",
     "EMAIL_ADDRESSES": []
   },
   "send_email": [
