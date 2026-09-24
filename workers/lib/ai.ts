@@ -145,7 +145,11 @@ export async function verifyDraft(ai: Ai, body: string): Promise<string> {
 				max_tokens: 4096,
 				temperature: 0,
 			},
-		)) as { response?: string };
+		)) as { response?: string; finish_reason?: string; choices?: { finish_reason?: string }[]; usage?: {completion_tokens?: number} };
+
+		// Never replace the user's email with a verifier response cut off by a
+		// generation limit. Keep the complete original text instead.
+		if (response.finish_reason === 'length' || response.choices?.some(choice => choice.finish_reason === 'length') || (response.usage?.completion_tokens ?? 0) >= 4096) return body;
 
 		const cleaned = response?.response ?? null;
 
@@ -183,7 +187,8 @@ export async function verifyDraft(ai: Ai, body: string): Promise<string> {
 			? `${cleanedTrimmed}\n\n${quotedBlock}`
 			: cleanedTrimmed;
 	} catch (e) {
-				console.error("AI failed — returns empty body, callers may save blank draft:", (e as Error).message);
+		if (e instanceof Error && e.name === "AIBudgetError") return body;
+		console.error("AI draft verification failed:", (e as Error).message);
 		return "";
 	}
 }

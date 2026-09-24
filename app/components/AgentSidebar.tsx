@@ -42,6 +42,17 @@ function LazyAgentPanel() {
 
 export default function AgentSidebar() {
 	const [activeTab, setActiveTab] = useState<"agent" | "mcp">("agent");
+	const [budget, setBudget] = useState<{limit:number; reserved:number; day:string; starts:string} | null>(null);
+	useEffect(() => {
+		let alive = true;
+		const refresh = () => fetch('/api/v1/ai-budget', {cache:'no-store'})
+			.then(r => { if (!r.ok) throw new Error('budget unavailable'); return r.json() as Promise<{limit:number; reserved:number; day:string; starts:string}>; })
+			.then(value => { if (alive) setBudget(value); })
+			.catch(() => { if (alive) setBudget(null); });
+		void refresh();
+		const interval = setInterval(refresh, 60000);
+		return () => { alive = false; clearInterval(interval); };
+	}, []);
 
 	return (
 		<div className="flex flex-col h-full">
@@ -73,6 +84,12 @@ export default function AgentSidebar() {
 				</button>
 			</div>
 
+			<div className="px-3 py-2 text-xs text-kumo-subtle border-b border-kumo-line" role="status">
+				{budget ? budget.day < budget.starts
+					? 'AI safeguard active. AI starts at the next 5:00 AM Pakistan reset. Regular email works.'
+					: `AI budget: ${budget.reserved.toLocaleString()} / ${budget.limit.toLocaleString()} reserved units today. Shared by all mailboxes; resets at 5:00 AM Pakistan. Large requests may pause earlier.`
+					: 'AI budget status unavailable. AI requests require a successful budget check.'}
+			</div>
 			{/* Tab content — keep agent mounted so chat isn't lost */}
 			<div className="flex-1 min-h-0 overflow-hidden">
 				<div className={activeTab === "agent" ? "h-full" : "hidden"}>

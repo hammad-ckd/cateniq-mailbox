@@ -27,7 +27,7 @@
     }
   ],
   "ai": {
-    "binding": "AI"
+    "binding": "AI_RAW"
   },
   "durable_objects": {
     "bindings": [
@@ -42,6 +42,10 @@
       {
         "name": "EMAIL_MCP",
         "class_name": "EmailMCP"
+      },
+      {
+        "name": "AI_BUDGET",
+        "class_name": "AIBudget"
       }
     ]
   },
@@ -62,6 +66,12 @@
       "tag": "v3",
       "new_sqlite_classes": [
         "EmailMCP"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "AIBudget"
       ]
     }
   ]

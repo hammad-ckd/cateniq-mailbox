@@ -83,6 +83,11 @@ app.use("/api/*", cors({
 }));
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
+app.get("/api/v1/ai-budget", (c) => {
+	const stub = c.env.AI_BUDGET.get(c.env.AI_BUDGET.idFromName("shared-daily-ai-budget"));
+	return stub.fetch("https://budget/status");
+});
+
 // -- Config ---------------------------------------------------------
 
 app.get("/api/v1/config", (c) => {
