@@ -40,6 +40,7 @@ export default function HomeRoute() {
 		staleTime: Infinity, // config rarely changes
 	});
 
+	const isAdmin = configData?.isAdmin === true;
 	const domains = configData?.domains ?? [];
 	const emailAddresses = configData?.emailAddresses ?? [];
 
@@ -66,7 +67,7 @@ export default function HomeRoute() {
 	// Auto-create mailboxes from config (run once when both data sources are ready)
 	const autoCreateDone = useRef(false);
 	useEffect(() => {
-		if (autoCreateDone.current) return;
+		if (!isAdmin || autoCreateDone.current) return;
 		if (emailAddresses.length === 0 || !mailboxesFetched) return;
 		const existingEmails = new Set(
 			mailboxes.map((m) => m.email.toLowerCase()),
@@ -87,7 +88,7 @@ export default function HomeRoute() {
 			}),
 		).then(() => { if (!cancelled) refetchMailboxes(); });
 		return () => { cancelled = true; };
-	}, [emailAddresses, mailboxes, refetchMailboxes]);
+	}, [isAdmin, emailAddresses, mailboxes, mailboxesFetched, refetchMailboxes]);
 
 	const handleCreate = async (e: FormEvent) => {
 		e.preventDefault();
@@ -144,8 +145,8 @@ export default function HomeRoute() {
 			<div className="mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-16">
 				<div className="mb-8">
 					<div className="flex items-center justify-between">
-						<h1 className="text-2xl font-bold text-kumo-default">Mailboxes</h1>
-						{!isConfigured && (
+						<div><h1 className="text-2xl font-bold text-kumo-default">Mailboxes</h1><p className="text-sm text-kumo-subtle">{configData?.loginEmail} · <a href="/cdn-cgi/access/logout">Sign out</a></p></div>
+						{isAdmin && !isConfigured && (
 							<Button
 								variant="primary"
 								icon={<PlusIcon size={16} />}
@@ -187,7 +188,7 @@ export default function HomeRoute() {
 										{account.email}
 									</div>
 								</div>
-								{!isConfigured && (
+								{isAdmin && !isConfigured && (
 									<Button
 										variant="ghost"
 										size="sm"
@@ -226,7 +227,7 @@ export default function HomeRoute() {
 									? "Your email routing is configured but no mailboxes have been created yet. They will appear here automatically."
 									: "Create a mailbox to start sending and receiving emails with your domain."}
 							</p>
-							{!isConfigured && (
+							{isAdmin && !isConfigured && (
 								<Button
 									variant="primary"
 									icon={<PlusIcon size={16} />}

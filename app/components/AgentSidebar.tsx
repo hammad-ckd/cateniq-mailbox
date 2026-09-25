@@ -5,6 +5,9 @@
 import { Loader } from "@cloudflare/kumo";
 import { PlugsIcon, RobotIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import api from "~/services/api";
+import { queryKeys } from "~/queries/keys";
 import MCPPanel from "./MCPPanel";
 
 function LazyAgentPanel() {
@@ -41,6 +44,7 @@ function LazyAgentPanel() {
 }
 
 export default function AgentSidebar() {
+	const { data: config } = useQuery({ queryKey: queryKeys.config, queryFn: api.getConfig });
 	const [activeTab, setActiveTab] = useState<"agent" | "mcp">("agent");
 	const [budget, setBudget] = useState<{limit:number; reserved:number; day:string; starts:string} | null>(null);
 	useEffect(() => {
@@ -70,7 +74,7 @@ export default function AgentSidebar() {
 					<RobotIcon size={14} weight={activeTab === "agent" ? "fill" : "regular"} />
 					Agent
 				</button>
-				<button
+				{config?.isAdmin && <button
 					type="button"
 					onClick={() => setActiveTab("mcp")}
 					className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 bg-transparent cursor-pointer ${
@@ -81,7 +85,7 @@ export default function AgentSidebar() {
 				>
 					<PlugsIcon size={14} weight={activeTab === "mcp" ? "fill" : "regular"} />
 					MCP
-				</button>
+				</button>}
 			</div>
 
 			<div className="px-3 py-2 text-xs text-kumo-subtle border-b border-kumo-line" role="status">
@@ -95,7 +99,7 @@ export default function AgentSidebar() {
 				<div className={activeTab === "agent" ? "h-full" : "hidden"}>
 					<LazyAgentPanel />
 				</div>
-				{activeTab === "mcp" && <MCPPanel />}
+				{config?.isAdmin && activeTab === "mcp" && <MCPPanel />}
 			</div>
 		</div>
 	);

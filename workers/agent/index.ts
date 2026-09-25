@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { canUseAgentSession } from "../lib/access";
 import { createBudgetedAI } from "../lib/ai-budget";
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import {
@@ -274,6 +275,33 @@ function createEmailTools(env: Env, mailboxId: string) {
 // SEND_EMAIL binding shape and the AIChatAgent constraint.  The actual env
 // is fully typed inside the tools via the closure.
 export class EmailAgent extends AIChatAgent<any> {
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		// The SDK installs its own handlers in super(); wrap those before it can send
+		// history or process RPC/chat messages, including after hibernation.
+		const connect = this.onConnect.bind(this);
+		this.onConnect = async (connection, context) => {
+			let identity;
+			try { identity = JSON.parse(context.request.headers.get("x-inbox-identity") || "null"); } catch { identity = null; }
+			if (!canUseAgentSession(identity, this.name)) { connection.close(1008, "Please sign in again"); return; }
+			connection.setState({ inboxIdentity: identity });
+			return connect(connection, context);
+		};
+		const message = this.onMessage.bind(this);
+		this.onMessage = async (connection, data) => {
+			if (!canUseAgentSession((connection.state as any)?.inboxIdentity, this.name)) { connection.close(1008, "Please sign in again"); return; }
+			return message(connection, data);
+		};
+	}
+
+	broadcast(message: string | ArrayBuffer | ArrayBufferView, without: string[] = []) {
+		const excluded = new Set(without);
+		for (const connection of this.getConnections()) {
+			if (!canUseAgentSession((connection.state as any)?.inboxIdentity, this.name)) { connection.close(1008, "Please sign in again"); continue; }
+			if (!excluded.has(connection.id)) connection.send(message);
+		}
+	}
+
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
 		const mailboxId = this.name;
@@ -335,6 +363,7 @@ export class EmailAgent extends AIChatAgent<any> {
 		subject: string;
 		threadId: string;
 	}) {
+		if (emailData.mailboxId !== this.name) throw new Error("Mailbox mismatch");
 		const env = this.env as Env;
 		const workersai = createWorkersAI({ binding: createBudgetedAI(env) });
 		const tools = createEmailTools(env, emailData.mailboxId);

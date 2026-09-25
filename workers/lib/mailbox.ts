@@ -10,10 +10,12 @@
 import { createMiddleware } from "hono/factory";
 import type { MailboxDO } from "../durableObject";
 import type { Env } from "../types";
+import type { Identity } from "./access";
 
 export type MailboxContext = {
 	Bindings: Env;
 	Variables: {
+		identity: Identity;
 		mailboxStub: DurableObjectStub<MailboxDO>;
 	};
 };
@@ -21,7 +23,7 @@ export type MailboxContext = {
 export const requireMailbox = createMiddleware<MailboxContext>(async (c, next) => {
 	const rawId = c.req.param("mailboxId");
 	if (!rawId) return c.json({ error: "Mailbox ID required" }, 400);
-	const mailboxId = decodeURIComponent(rawId);
+	const mailboxId = rawId;
 
 	// Verify mailbox exists
 	const key = `mailboxes/${mailboxId}.json`;

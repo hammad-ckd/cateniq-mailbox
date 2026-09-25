@@ -1,0 +1,11 @@
+# Private mailbox access
+
+Approved September 25, 2026: existing Cookd Brands addresses authenticate via Cloudflare Access email OTP. Exact identities are mapped in workers/lib/access.ts. Each of hammad, reza, zuhayr, yassir and sabiha at cookdbrands.com can manage only their matching cateniq.com and catenor.com mailboxes. hammadshaikh43@gmail.com is the sole administrator and recovery identity. Access assignments require an administrator code deployment; they cannot be changed through mailbox preferences.
+
+JWT signatures, issuer, audience and expiry are checked before serving pages, APIs, attachments, MCP or chat connections. Authorization applies before any mailbox storage access. Only the email-agent route is exposed, internal delivery hooks are blocked externally, and MCP is administrator-only. Agent connections retain their verified identity and expiry in server-side connection state and recheck access before messages and broadcasts. Revocation requires removing the identity in code, deploying, and revoking Cloudflare Access sessions; for emergency revocation also terminate/restart active connections. Data already downloaded cannot be recalled.
+
+Mail delivery uses the SMTP envelope recipient, never the first To header, including CC/BCC deliveries. Existing stored messages are not moved or deleted. The shared AI budget remains unchanged.
+
+Deployment order: run access, delivery and budget tests; typecheck and build; independent code review; publish through the existing GitHub-triggered Cloudflare build; verify admin production access and that preview URLs are disabled; then enable OTP for the five exact staff identities and retain Gmail admin login. Never grant a whole-domain or any-email OTP policy. Do not re-enable old version URLs containing the earlier unrestricted app, and do not roll production back to unrestricted code while staff login is enabled.
+
+Login: open https://cateniq-mailbox.cateniq.workers.dev/, enter the approved cookdbrands.com address, retrieve the one-time code from that existing mailbox, then open either owned inbox. No Cloudflare account or shared password is needed. Gmail admin uses the same URL. Staff cannot create/delete mailboxes or use external MCP access. Sign out is available on the mailbox chooser.

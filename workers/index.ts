@@ -21,6 +21,8 @@ import { Folders } from "../shared/folders";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 
+import { authorizeRequest, canAccessMailbox } from "./lib/access";
+
 type AppContext = Context<MailboxContext>;
 
 // -- Request body schemas (kept for validation) ---------------------
@@ -66,6 +68,7 @@ function boolQuery(c: AppContext, key: string): boolean | undefined {
 // -- App & middleware -----------------------------------------------
 
 const app = new Hono<MailboxContext>();
+app.use("*", authorizeRequest);
 app.use("/api/*", cors({
 	origin: (origin) => {
 		// Same-origin requests have no Origin header — allow them.
@@ -93,15 +96,16 @@ app.get("/api/v1/ai-budget", (c) => {
 app.get("/api/v1/config", (c) => {
 	const domainsRaw = c.env.DOMAINS || "";
 	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
-	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json({ domains, emailAddresses });
+	const identity = c.var.identity;
+	const emailAddresses = identity.isAdmin ? c.env.EMAIL_ADDRESSES ?? [] : identity.mailboxes;
+	return c.json({ domains, emailAddresses, isAdmin: identity.isAdmin, loginEmail: identity.email });
 });
 
 // -- Mailboxes ------------------------------------------------------
 
 app.get("/api/v1/mailboxes", async (c) => {
 	const allMailboxes = await listMailboxes(c.env.BUCKET);
-	return c.json(allMailboxes.map((m) => ({ ...m, name: m.id })));
+	return c.json(allMailboxes.filter(m => canAccessMailbox(c.var.identity, m.id)).map((m) => ({ ...m, name: m.id })));
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
@@ -320,7 +324,7 @@ app.get("/api/v1/mailboxes/:mailboxId/emails/:emailId/attachments/:attachmentId"
 	const emailId = c.req.param("emailId")!;
 	const attachmentId = c.req.param("attachmentId")!;
 	const attachment = await c.var.mailboxStub.getAttachment(attachmentId);
-	if (!attachment) return c.json({ error: "Attachment not found" }, 404);
+	if (!attachment || attachment.email_id !== emailId) return c.json({ error: "Attachment not found" }, 404);
 	const obj = await c.env.BUCKET.get(`attachments/${emailId}/${attachmentId}/${attachment.filename}`);
 	if (!obj) return c.json({ error: "Attachment file not found" }, 404);
 	const headers = new Headers();
@@ -350,23 +354,22 @@ async function streamToArrayBuffer(stream: ReadableStream, streamSize: number) {
 	return result;
 }
 
-async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env: Env, ctx: ExecutionContext) {
+async function receiveEmail(event: { to: string; raw: ReadableStream; rawSize: number }, env: Env, ctx: ExecutionContext) {
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
 	const parsedEmail = await new PostalMime().parse(rawEmail);
 
-	if (!parsedEmail.to?.length || !parsedEmail.to[0].address) throw new Error("received email with empty to");
+	if (!event.to) throw new Error("Missing SMTP envelope recipient");
 
 	const allowedAddresses = ((env.EMAIL_ADDRESSES ?? []) as string[]).map((a) => a.toLowerCase());
-	const allRecipients = parsedEmail.to.map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
+	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 
-	let mailboxId: string | undefined;
-	if (allowedAddresses.length > 0) {
-		mailboxId = allRecipients.find((addr) => allowedAddresses.includes(addr));
-		if (!mailboxId) { console.log(`Ignoring email: no recipient matches EMAIL_ADDRESSES.`); return; }
-	} else { mailboxId = allRecipients[0]; }
-	if (!mailboxId) throw new Error("received email with no valid recipient address");
+	// Cloudflare invokes this handler separately for each SMTP envelope recipient.
+	// To/CC headers describe the message, not the mailbox being delivered to (especially BCC).
+	const mailboxId = event.to.toLowerCase();
+	if (allowedAddresses.length && !allowedAddresses.includes(mailboxId)) return;
+	if (!/^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]+$/.test(mailboxId)) throw new Error("Invalid envelope recipient");
 
 	const messageId = crypto.randomUUID();
 	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
@@ -409,7 +412,7 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 
 	const agentStub = env.EMAIL_AGENT.get(env.EMAIL_AGENT.idFromName(mailboxId));
 	ctx.waitUntil(agentStub.fetch(new Request("https://agents/onNewEmail", {
-		method: "POST", headers: { "Content-Type": "application/json" },
+		method: "POST", headers: { "Content-Type": "application/json", "x-partykit-room": mailboxId },
 		body: JSON.stringify({ mailboxId, emailId: messageId, sender: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "", threadId }),
 	})).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message)));
 }
